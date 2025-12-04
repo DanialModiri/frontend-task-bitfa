@@ -199,6 +199,32 @@ const MyTradingView = ({
       autosize: chartOptions.autosize,
       timezone: "Etc/UTC",
       theme: theme || "dark",
+      custom_formatters: {
+        priceFormatterFactory: (symbolInfo) => {
+          if (symbolInfo === null) {
+            return null;
+          }
+          return {
+            format: (price: number) => {
+              if (price < 0.00001) {
+                const priceSplited = price.toExponential().split('e')
+                let zeros = priceSplited[1]
+                zeros = zeros.startsWith('-') ? zeros.slice(1) : zeros
+                zeros = (Number(zeros) - 1).toString()
+                const noUnderLines = '₀₁₂₃₄₅₆₇₈₉'
+                const firstSlice = `0.0${zeros.split('').map(item => noUnderLines[Number(item)])}`
+                let secondPart = priceSplited[0].replace(/\./g, '')
+                secondPart = secondPart.length > 3 ? secondPart.slice(0, 3) : secondPart;
+                return `${firstSlice}${secondPart}`
+              }
+
+              return price.toLocaleString()
+            },
+          };
+          return null;
+
+        }
+      }
     };
 
     myWidget.current = new TradingViewWidget(widgetOptions);
