@@ -1,13 +1,16 @@
-import { useEffect, useRef, useState } from "react";
+import { Dialog } from "@/components/ui/dialog";
 import {
   ChartingLibraryWidgetOptions,
   IBasicDataFeed,
+  IChartingLibraryWidget,
   IDatafeedQuotesApi,
   ResolutionString,
   widget as TradingViewWidget,
 } from "@/public/static/charting_library";
 import { IOhlcvData } from "@/types/datafeed.type";
 import { usePathname } from "next/navigation";
+import { Fragment, useEffect, useRef, useState } from "react";
+import LogoSelect from "./LogoSelect";
 
 interface Props {
   chartOptions: Partial<ChartingLibraryWidgetOptions>;
@@ -38,6 +41,7 @@ const MyTradingView = ({
   const [chartIsReady, setChartIsReady] = useState(false);
   const myWidget = useRef<any>();
   const pathname = usePathname();
+  const [isCompareModalOpen, setIsCompareModalOpen] = useState(false)
 
   const dataFeed = (
     ohlcvData: IOhlcvData[],
@@ -243,6 +247,18 @@ const MyTradingView = ({
   }, [myWidget]);
 
   useEffect(() => {
+    if (chartIsReady) {
+      if (myWidget.current) {
+        const compareButton = myWidget.current?.createButton()
+        compareButton.textContent = 'Comapre';
+        compareButton.addEventListener('click', () => {
+          setIsCompareModalOpen(true)
+        })
+      }
+    }
+  }, [chartIsReady])
+
+  useEffect(() => {
     if (chartIsReady) myWidget.current.changeTheme(theme);
   }, [theme, chartIsReady]);
 
@@ -257,7 +273,21 @@ const MyTradingView = ({
     }
   }, [ohlcvData, tokenDescription, tokenExchange, chartIsReady]);
 
-  return <div ref={chartContainerRef} className={"TVChartContainer"} />;
+  const handleAddCompare = (name: string) => {
+    if (myWidget.current && chartIsReady) {
+      myWidget.current.activeChart().createStudy('Compare', false, false, {
+          symbol: name.replace(/ \/ /g, ':')
+      })
+      // addCompareSymbol()
+    } 
+  }
+
+  return <Fragment>
+    <Dialog open={isCompareModalOpen} onOpenChange={(value) => setIsCompareModalOpen(value)}>
+      <LogoSelect onAdd={handleAddCompare} />
+    </Dialog>
+    <div ref={chartContainerRef} className={"TVChartContainer"} />;
+  </Fragment>
 };
 
 export default MyTradingView;
