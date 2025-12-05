@@ -26,7 +26,12 @@ interface Props {
   }>;
 }
 
+interface IChartingLibraryWidgetCustom extends IChartingLibraryWidget {
+  _options?: any
+}
+
 let intervalId: NodeJS.Timeout;
+
 
 const MyTradingView = ({
   chartOptions,
@@ -39,7 +44,7 @@ const MyTradingView = ({
   const chartContainerRef =
     useRef<HTMLDivElement>() as React.MutableRefObject<HTMLInputElement>;
   const [chartIsReady, setChartIsReady] = useState(false);
-  const myWidget = useRef<any>();
+  const myWidget = useRef<IChartingLibraryWidgetCustom>(undefined!);
   const pathname = usePathname();
   const [isCompareModalOpen, setIsCompareModalOpen] = useState(false)
 
@@ -108,14 +113,49 @@ const MyTradingView = ({
       },
       getBars: (symbolInfo, resolution, periodParams, onResult, onError) => {
         setTimeout(() => {
-          let bars = [];
+          let bars = ohlcvData;
+          const resolvationMap: any = {
+            10: 600,
+            15: 900,
+            30: 1800,
+            60: 3600,
+            240: 14400,
+            480: 28800,
+            720: 43200,
+            "1D": 86400,
+            "3D": 259200,
+            "1W": 604800,
+            "1M": 2592e3
+          };
 
-          bars = ohlcvData
-            .filter(
-              (bar) =>
-                bar.time * 1000 >= periodParams.from * 1000 &&
-                bar.time * 1000 <= periodParams.to * 1000
-            )
+
+          let n = resolvationMap[resolution] || 300
+          const uniqueTimeDurationMap = new Map();
+          for (const bar of bars) {
+            let e = Math.floor(bar.time / n) * n;
+            if (uniqueTimeDurationMap.has(e)) {
+              let data = uniqueTimeDurationMap.get(e);
+              data.high = Math.max(data.high, bar.high),
+                data.low = Math.min(data.low, bar.low),
+                data.close = bar.close,
+                data.volume += bar.volume
+            } else {
+              uniqueTimeDurationMap.set(e, {
+                time: e,
+                open: bar.open,
+                high: bar.high,
+                low: bar.low,
+                close: bar.close,
+                volume: bar.volume
+              })
+            }
+          };
+
+          const finalData = Array.from(uniqueTimeDurationMap.values()).sort((e, t) => e.time - t.time).filter(
+            (bar) =>
+              bar.time * 1000 >= periodParams.from * 1000 &&
+              bar.time * 1000 <= periodParams.to * 1000
+          )
             .map((bar) => ({
               time: bar.time * 1000,
               open: bar.open,
@@ -125,8 +165,8 @@ const MyTradingView = ({
               volume: bar.volume,
             }));
 
-          if (bars.length) {
-            onResult(bars, { noData: false });
+          if (finalData.length) {
+            onResult(finalData, { noData: false });
           } else {
             onResult([], { noData: true });
           }
@@ -193,7 +233,7 @@ const MyTradingView = ({
       library_path: chartOptions.library_path,
       locale: "en",
       debug: true,
-      disabled_features: ["use_localstorage_for_settings"],
+      disabled_features: ["use_localstorage_for_settings", "header_compare"],
       enabled_features: ["study_templates"],
       charts_storage_url: chartOptions.charts_storage_url,
       charts_storage_api_version: chartOptions.charts_storage_api_version,
@@ -249,10 +289,12 @@ const MyTradingView = ({
   useEffect(() => {
     if (chartIsReady) {
       if (myWidget.current) {
-        const compareButton = myWidget.current?.createButton()
-        compareButton.textContent = 'Comapre';
-        compareButton.addEventListener('click', () => {
-          setIsCompareModalOpen(true)
+        myWidget.current.headerReady().then(() => {
+          const compareButton = myWidget.current?.createButton()
+          compareButton.textContent = 'Comapre';
+          compareButton.addEventListener('click', () => {
+            setIsCompareModalOpen(true)
+          })
         })
       }
     }
@@ -276,14 +318,16 @@ const MyTradingView = ({
   const handleAddCompare = (name: string) => {
     if (myWidget.current && chartIsReady) {
       myWidget.current.activeChart().createStudy('Compare', false, false, {
-          symbol: name.replace(/ \/ /g, ':')
+        symbol: name.replace(/ \/ /g, ':')
+      }, undefined, {
+        priceScale: "new-left"
       })
-      // addCompareSymbol()
-    } 
+      setIsCompareModalOpen(false)
+    }
   }
 
   return <Fragment>
-    <Dialog open={isCompareModalOpen} onOpenChange={(value) => setIsCompareModalOpen(value)}>
+    <Dialog open={isCompareModalOpen} modal onOpenChange={(value) => setIsCompareModalOpen(value)}>
       <LogoSelect onAdd={handleAddCompare} />
     </Dialog>
     <div ref={chartContainerRef} className={"TVChartContainer"} />;
