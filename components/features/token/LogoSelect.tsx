@@ -4,7 +4,7 @@ import { DialogContent } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { searchToken } from '@/services/http/token.http'
-import { IToken } from '@/types/token.type'
+import { Daum, IToken } from '@/types/token.type'
 import ChainImage from '@/utils/ChainImage'
 import { AvatarFallback } from '@radix-ui/react-avatar'
 import { UseQueryResult, useQuery } from '@tanstack/react-query'
@@ -30,7 +30,7 @@ const useSpotlightSearch = (
 };
 
 type Props = {
-    onAdd: (name: string) => void
+    onAdd: (info: Daum) => void
 }
 
 function LogoSelect({
@@ -38,14 +38,19 @@ function LogoSelect({
 }: Props) {
 
     const [search, setSearch] = useDebounce('', 500)
-    const [selectedToken, setSelectedToken] = useState<string | undefined>()
+    const [selectedToken, setSelectedToken] = useState<Daum | undefined>()
 
     const info = useSpotlightSearch(search)
 
     return (
         <DialogContent>
             <Select
-                onValueChange={(v) => setSelectedToken(v)}
+                onValueChange={(v) => {
+                    const selected = info.data?.data?.find(item => item.id === v);
+                    if (selected)
+                        setSelectedToken(selected)
+                }}
+
             >
                 <SelectTrigger>
                     <SelectValue placeholder='Select a Status to Update' />

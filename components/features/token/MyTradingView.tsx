@@ -7,10 +7,13 @@ import {
   ResolutionString,
   widget as TradingViewWidget,
 } from "@/public/static/charting_library";
-import { IOhlcvData } from "@/types/datafeed.type";
+import { IDatafeed, IOhlcvData } from "@/types/datafeed.type";
 import { usePathname } from "next/navigation";
 import { Fragment, useEffect, useRef, useState } from "react";
 import LogoSelect from "./LogoSelect";
+import { Daum } from "@/types/token.type";
+import { getDataFeed } from "@/services/http/token.http";
+import { getOhlcvData, mergeOhlcvData } from "@/lib/utils";
 
 interface Props {
   chartOptions: Partial<ChartingLibraryWidgetOptions>;
@@ -45,6 +48,7 @@ const MyTradingView = ({
     useRef<HTMLDivElement>() as React.MutableRefObject<HTMLInputElement>;
   const [chartIsReady, setChartIsReady] = useState(false);
   const myWidget = useRef<IChartingLibraryWidgetCustom>(undefined!);
+  const compareingData = useRef<{ [name: string]: Daum & { bars?: any[] } }>({});
   const pathname = usePathname();
   const [isCompareModalOpen, setIsCompareModalOpen] = useState(false)
 
@@ -112,8 +116,64 @@ const MyTradingView = ({
         }, 0);
       },
       getBars: (symbolInfo, resolution, periodParams, onResult, onError) => {
-        setTimeout(() => {
-          let bars = ohlcvData;
+        setTimeout(async () => {
+          let bars = [];
+          const fetchData = async (
+            timeframe: string,
+            aggregate: number,
+            sumbolInfo: {
+              tokenAddress: string,
+              network: string
+            }
+          ): Promise<IDatafeed> => {
+            return await getDataFeed({
+              params: {
+                contractAddress: sumbolInfo.tokenAddress,
+                network: sumbolInfo.network,
+                timeframe,
+                aggregate,
+              },
+            });
+          };
+
+          console.log(compareingData.current, symbolInfo.name)
+          if (compareingData.current?.[symbolInfo.name]) {
+
+            const defaultBars = compareingData.current[symbolInfo.name].bars;
+            if (defaultBars) {
+              bars = defaultBars;
+            } else {
+              const [network, contractAddress] =
+                compareingData.current?.[symbolInfo.name]?.id?.split(
+                  "_"
+                ) ?? [];
+
+              const minuteDatafeed = await fetchData("minute", 5, {
+                tokenAddress: contractAddress,
+                network: network,
+              })
+
+              const hourDatafeed = await fetchData("hour", 1, {
+                tokenAddress: contractAddress,
+                network: network,
+              })
+
+              const dayDatafeed = await fetchData("day", 1, {
+                tokenAddress: contractAddress,
+                network: network,
+              })
+
+              bars = mergeOhlcvData(
+                getOhlcvData(minuteDatafeed!),
+                getOhlcvData(hourDatafeed!),
+                getOhlcvData(dayDatafeed!)
+              )
+            }
+
+          } else {
+            bars = ohlcvData;
+          }
+
           const resolvationMap: any = {
             10: 600,
             15: 900,
@@ -174,6 +234,9 @@ const MyTradingView = ({
       },
       subscribeBars: (symbolInfo, resolution, onRealtimeCallback) => {
         intervalId = setInterval(() => {
+          if (compareingData.current?.[symbolInfo.name]) {
+            return;
+          }
           const latestBar = {
             time: ohlcvData[ohlcvData.length - 1].time * 1000,
             open: ohlcvData[ohlcvData.length - 1].open,
@@ -250,18 +313,18 @@ const MyTradingView = ({
           }
           return {
             format: (price: number) => {
-              if (price < 0.00001) {
+              if (Math.abs(price) < 0.00001) {
                 const priceSplited = price.toExponential().split('e')
                 let zeros = priceSplited[1]
                 zeros = zeros.startsWith('-') ? zeros.slice(1) : zeros
                 zeros = (Number(zeros) - 1).toString()
                 const noUnderLines = '₀₁₂₃₄₅₆₇₈₉'
-                const firstSlice = `0.0${zeros.split('').map(item => noUnderLines[Number(item)])}`
-                let secondPart = priceSplited[0].replace(/\./g, '')
+                const firstSlice = `0.0${zeros.split('').map(item => noUnderLines[Number(item)]).join('')}`
+                let secondPart = priceSplited[0].replace(/\./g, '');
                 secondPart = secondPart.length > 3 ? secondPart.slice(0, 3) : secondPart;
-                return `${firstSlice}${secondPart}`
+                secondPart = secondPart.startsWith('-') ? secondPart.slice(1) : secondPart
+                return `${price < 0 ? '-' : ''}${firstSlice}${secondPart}`
               }
-
               return price.toLocaleString()
             },
           };
@@ -315,13 +378,15 @@ const MyTradingView = ({
     }
   }, [ohlcvData, tokenDescription, tokenExchange, chartIsReady]);
 
-  const handleAddCompare = (name: string) => {
-    if (myWidget.current && chartIsReady) {
+  const handleAddCompare = (data: Daum) => {
+    if (myWidget.current && chartIsReady && data.id && data.attributes?.name) {
+      console.log({ data })
       myWidget.current.activeChart().createStudy('Compare', false, false, {
-        symbol: name.replace(/ \/ /g, ':')
+        symbol: data.attributes?.name?.replace(/ \/ /g, ':')
       }, undefined, {
-        priceScale: "new-left"
+        priceScale: "new-left",
       })
+      compareingData.current[data.attributes?.name?.replace(/ \/ /g, ':')] = data;
       setIsCompareModalOpen(false)
     }
   }
